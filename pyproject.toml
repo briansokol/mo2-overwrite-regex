@@ -1,0 +1,17 @@
+[project]
+name = "mo2-overwrite-regex"
+version = "0.1.0"
+description = "Mod Organizer 2 plugin"
+requires-python = "==3.12.*"
+
+[dependency-groups]
+dev = ["mobase-stubs", "PyQt6", "ruff", "pyright"]
+
+[tool.uv]
+package = false
+
+[tool.pyright]
+include = ["overwrite_regex"]
+pythonVersion = "3.12"
+# mobase is stubs-only; MO2 injects the real module at runtime.
+reportMissingModuleSource = "none"

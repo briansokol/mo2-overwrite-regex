@@ -1,0 +1,12 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Reload MO2 plugin",
+      "type": "shell",
+      "command": "'/mnt/d/Modding Skyrim/MO2/ModOrganizer.exe' reload-plugin 'Overwrite Regex'",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    }
+  ]
+}
