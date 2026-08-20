@@ -81,7 +81,7 @@ class OverwriteRegex(mobase.IPluginTool):
 
     def _resolveMod(self, name: str) -> Path | None:
         mod = self._organizer.modList().getMod(name)
-        if mod is None:  # pyright: ignore[reportUnnecessaryComparison]
+        if mod is None:
             return None
         return Path(mod.absolutePath())
 
