@@ -94,7 +94,6 @@ def sweep(
         destination = root / relative
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.unlink(missing_ok=True)
             shutil.move(source, destination)
         except OSError as error:
             qWarning(f"Overwrite Regex: cannot move {relative}: {error}")
@@ -218,6 +217,7 @@ def _check_sweep() -> None:
             ("textures/gen/x.dds", "c"),
             ("gone/orphan.txt", "d"),
             ("readme.txt", "e"),
+            ("notes/todo.txt", "f"),
         ]:
             path = overwrite / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -238,7 +238,7 @@ def _check_sweep() -> None:
 
         counts = sweep(overwrite, rules, resolve)
 
-        assert counts == Counts(moved=3, skipped=1, unmatched=1), counts
+        assert counts == Counts(moved=3, skipped=1, unmatched=2), counts
         assert stale.read_text() == "a", "an existing destination file is overwritten"
         assert not (mods / "Never" / "logs").exists(), "first matching rule wins"
         assert (mods / "Logs" / "logs" / "nested" / "deep.log").read_text() == "b", (
@@ -249,6 +249,9 @@ def _check_sweep() -> None:
             "an uninstalled mod leaves the file in overwrite"
         )
         assert (overwrite / "readme.txt").read_text() == "e", "unmatched files stay"
+        assert (overwrite / "notes" / "todo.txt").read_text() == "f", (
+            "a nested unmatched file stays where it is"
+        )
         assert not (overwrite / "logs").exists(), "emptied directories are pruned"
         assert not (overwrite / "already-empty").exists(), "already-empty are pruned"
         assert (overwrite / "gone").is_dir(), "directories with files are kept"
