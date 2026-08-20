@@ -42,6 +42,46 @@ mklink /D "D:\Modding Skyrim\MO2\plugins\overwrite_regex" "C:\Users\bsoko\OneDri
 Verify: launch MO2 and look for **Overwrite Regex** in the Tools menu (the
 puzzle-piece icon). It opens a message box showing your overwrite folder path.
 
+## Configuration
+
+Settings > Plugins > Overwrite Regex has one setting:
+
+| Setting      | Default                | Meaning                                              |
+| ------------ | ---------------------- | ---------------------------------------------------- |
+| `rules_file` | `overwrite_rules.toml` | Rules file path, relative to the MO2 base directory. |
+
+Create that file next to `ModOrganizer.ini`:
+
+```toml
+# overwrite_rules.toml
+# First match wins, top to bottom.
+
+[[rule]]
+pattern = '^logs/.*\.log$'
+mod = "My Logs Mod"
+
+[[rule]]
+pattern = '\.dds$'
+mod = "Generated Textures"
+```
+
+Each `pattern` is a Python regex, matched with `re.search` and case
+insensitively, against the file's path relative to `overwrite`, using forward
+slashes: `logs/papyrus.0.log`. Anchor with `^` or `$` where it matters.
+
+Use TOML **literal strings** (single quotes) for patterns. They perform no
+escape processing, so `'\.dds$'` is the regex you typed. Double quotes would
+require `"\\.dds$"`.
+
+`mod` is the mod's folder name under `MO2/mods/`.
+
+After a run finishes, each file in `overwrite` moves to the first matching
+mod, keeping its nested path. Unmatched files stay put. A rule naming a mod
+that is not installed logs a warning to `MO2/logs/mo_interface.log` and leaves
+the file alone. Tools > Overwrite Regex runs the same sweep on demand.
+
+The file is re-read on every sweep, so edits apply without restarting MO2.
+
 ## Development loop
 
 Edit, then reload the plugin without restarting MO2:
