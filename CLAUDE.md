@@ -82,6 +82,21 @@ you rename the plugin, update `.vscode/tasks.json` too.
   by regex`, `fix: handle empty overwrite folder`, `chore(deps): bump
   mobase-stubs to 2.5.3`. Common types: `feat`, `fix`, `docs`, `refactor`,
   `test`, `chore`, `build`.
+- **Never merge locally, and never push to `main`.** `main` is protected on
+  GitHub: direct pushes are rejected and every change must arrive through a
+  pull request. Push the feature branch and open a PR instead:
+
+  ```sh
+  git push -u origin <branch>
+  gh pr create --fill
+  ```
+
+- **Squash or rebase when merging a PR**, never a merge commit. The branch
+  requires linear history, so `gh pr merge --merge` is rejected; use
+  `gh pr merge --squash --delete-branch` (or `--rebase`).
+- Protection requires conversation resolution and forbids force pushes and
+  branch deletion on `main`. Admins are exempt, so a bypass is possible in an
+  emergency, but do not rely on it.
 - Stage files by name. `.venv/` is gitignored but the directory is large and
   lives in the working tree.
 
