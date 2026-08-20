@@ -61,7 +61,7 @@ class OverwriteRegex(mobase.IPluginTool):
             self._parentWidget(),
             "Overwrite Regex",
             f"Moved {counts.moved} files.\n"
-            f"{counts.skipped} skipped (mod folder missing).\n"
+            f"{counts.skipped} skipped (see mo_interface.log).\n"
             f"{counts.unmatched} unmatched, left in overwrite.",
         )
 

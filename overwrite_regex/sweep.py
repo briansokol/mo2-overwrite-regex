@@ -92,6 +92,13 @@ def sweep(
             continue
 
         destination = root / relative
+        if destination.is_dir():
+            qWarning(
+                f"Overwrite Regex: {relative} is a directory inside {mod!r}, "
+                f"leaving it in overwrite"
+            )
+            skipped += 1
+            continue
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(source, destination)
@@ -218,6 +225,7 @@ def _check_sweep() -> None:
             ("gone/orphan.txt", "d"),
             ("readme.txt", "e"),
             ("notes/todo.txt", "f"),
+            ("other/extra.log", "g"),
         ]:
             path = overwrite / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,13 +240,19 @@ def _check_sweep() -> None:
         stale.parent.mkdir(parents=True)
         stale.write_text("stale")
 
+        # "other/extra.log" matches only '\.log$' (mod "Never"), not '^logs/'
+        # or the other rules, so this exercises the directory-collision guard
+        # rather than a non-match or an uninstalled mod.
+        collision = mods / "Never" / "other" / "extra.log"
+        collision.mkdir(parents=True)
+
         def resolve(name: str) -> Path | None:
             candidate = mods / name
             return candidate if candidate.is_dir() else None
 
         counts = sweep(overwrite, rules, resolve)
 
-        assert counts == Counts(moved=3, skipped=1, unmatched=2), counts
+        assert counts == Counts(moved=3, skipped=2, unmatched=2), counts
         assert stale.read_text() == "a", "an existing destination file is overwritten"
         assert not (mods / "Never" / "logs").exists(), "first matching rule wins"
         assert (mods / "Logs" / "logs" / "nested" / "deep.log").read_text() == "b", (
@@ -251,6 +265,12 @@ def _check_sweep() -> None:
         assert (overwrite / "readme.txt").read_text() == "e", "unmatched files stay"
         assert (overwrite / "notes" / "todo.txt").read_text() == "f", (
             "a nested unmatched file stays where it is"
+        )
+        assert (overwrite / "other" / "extra.log").read_text() == "g", (
+            "a file colliding with an existing directory stays in overwrite"
+        )
+        assert not (collision / "extra.log").exists(), (
+            "nothing is created beneath the colliding directory"
         )
         assert not (overwrite / "logs").exists(), "emptied directories are pruned"
         assert not (overwrite / "already-empty").exists(), "already-empty are pruned"
