@@ -4,4 +4,6 @@ __pycache__/
 .ruff_cache/
 .serena/
 docs/
-.ssd/.superpowers/
+.ssd/
+.superpowers/
+
