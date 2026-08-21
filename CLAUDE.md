@@ -99,6 +99,16 @@ you rename the plugin, update `.vscode/tasks.json` too.
   emergency, but do not rely on it.
 - Stage files by name. `.venv/` is gitignored but the directory is large and
   lives in the working tree.
+- **Bump the version once per PR, before opening it.** Bump only when files
+  under `overwrite_regex/` change; a PR touching only build scripts, docs, or
+  config leaves the version alone. Pick the level from the change: `fix` is a
+  patch, `feat` is a minor, and a breaking change to plugin behavior or
+  settings is a minor while the version is `0.x` (a major once it reaches
+  1.0). Update **both** `version` in `pyproject.toml` and
+  `mobase.VersionInfo(...)` in `overwrite_regex/plugin.py`; they must never
+  drift. Report it in the PR body as
+  `Version: 0.1.0 -> 0.2.0 (minor: added regex preview)`, or
+  `Version: unchanged (no plugin code changes)`.
 
 ## Environment quirks
 
