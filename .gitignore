@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 .ruff_cache/
+.serena/
+docs/
+.ssd/
+.superpowers/
+
