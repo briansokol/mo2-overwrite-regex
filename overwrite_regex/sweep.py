@@ -4,6 +4,7 @@ Deliberately free of ``mobase`` so it can be imported and self-checked inside
 ``.venv``, where ``mobase`` is stubs-only. All MO2 glue lives in ``plugin.py``.
 """
 
+import json
 import re
 import shutil
 import tomllib
@@ -14,6 +15,7 @@ from typing import NamedTuple
 from PyQt6.QtCore import qWarning
 
 Rule = tuple[re.Pattern[str], str]
+Row = tuple[str, str]
 
 
 class Counts(NamedTuple):
@@ -22,12 +24,12 @@ class Counts(NamedTuple):
     unmatched: int
 
 
-def load_rules(path: Path) -> list[Rule] | None:
-    """Parse the TOML rules file.
+def load_rules(path: Path) -> list[Row] | None:
+    """Parse the TOML rules file into raw ``(pattern, mod)`` text.
 
     ``None`` means do not sweep at all. A half-applied broken rules file is
-    worse than none, so any structural problem aborts. A single pattern that
-    will not compile is isolated: that rule is dropped, the rest still apply.
+    worse than none, so any structural problem aborts. Patterns are returned
+    uncompiled: the editor needs the text a user typed, valid or not.
     """
     try:
         with path.open("rb") as handle:
@@ -44,7 +46,7 @@ def load_rules(path: Path) -> list[Rule] | None:
         qWarning(f"Overwrite Regex: 'rule' in {path} must be a list of [[rule]] tables")
         return None
 
-    rules: list[Rule] = []
+    rows: list[Row] = []
     for index, entry in enumerate(entries):
         pattern = entry.get("pattern") if isinstance(entry, dict) else None
         mod = entry.get("mod") if isinstance(entry, dict) else None
@@ -54,12 +56,55 @@ def load_rules(path: Path) -> list[Rule] | None:
                 f"'pattern' and a string 'mod'"
             )
             return None
+        rows.append((pattern, mod))
+
+    return rows
+
+
+def compile_rules(rows: list[Row]) -> list[Rule]:
+    """Compile raw rows, dropping the ones that will not compile.
+
+    A single unusable pattern is isolated rather than fatal: the rest of the
+    rules still apply.
+    """
+    rules: list[Rule] = []
+    for pattern, mod in rows:
         try:
             rules.append((re.compile(pattern, re.IGNORECASE), mod))
         except re.error as error:
             qWarning(f"Overwrite Regex: skipping invalid pattern {pattern!r}: {error}")
-
     return rules
+
+
+def save_rules(path: Path, rows: list[Row]) -> None:
+    """Write ``rows`` as ``[[rule]]`` tables, replacing whatever was there.
+
+    A JSON string literal is also a valid TOML basic string, so json.dumps
+    handles the escaping. Any comments in the previous file are lost.
+    """
+    path.write_text(
+        "".join(
+            f"[[rule]]\npattern = {json.dumps(pattern)}\nmod = {json.dumps(mod)}\n\n"
+            for pattern, mod in rows
+        ),
+        encoding="utf-8",
+    )
+
+
+def plan(overwrite: Path, rules: list[Rule]) -> list[tuple[str, str | None]]:
+    """Match every file under ``overwrite`` against ``rules``, moving nothing.
+
+    Returns each file's path relative to ``overwrite`` paired with the mod the
+    first matching rule names, or ``None`` when nothing matches.
+    """
+    entries: list[tuple[str, str | None]] = []
+    for source in sorted(overwrite.rglob("*")):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(overwrite).as_posix()
+        mod = next((name for pattern, name in rules if pattern.search(relative)), None)
+        entries.append((relative, mod))
+    return entries
 
 
 def sweep(
@@ -70,14 +115,9 @@ def sweep(
     """Route every file under ``overwrite`` by the first rule that matches it."""
     moved = skipped = unmatched = 0
 
-    # sorted() drains the generator before any file moves, so the walk is not
-    # invalidated by the moves it triggers.
-    for source in sorted(overwrite.rglob("*")):
-        if not source.is_file():
-            continue
-
-        relative = source.relative_to(overwrite).as_posix()
-        mod = next((name for pattern, name in rules if pattern.search(relative)), None)
+    # plan() returns a list, so the walk is complete before any file moves and
+    # cannot be invalidated by them.
+    for relative, mod in plan(overwrite, rules):
         if mod is None:
             unmatched += 1
             continue
@@ -101,7 +141,7 @@ def sweep(
             continue
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(source, destination)
+            shutil.move(overwrite / relative, destination)
         except OSError as error:
             qWarning(f"Overwrite Regex: cannot move {relative}: {error}")
             skipped += 1
@@ -144,11 +184,9 @@ def _check_load_rules() -> None:
             "pattern = '\\.dds$'\n"
             'mod = "Textures"\n'
         )
-        rules = load_rules(good)
-        assert rules is not None, "a valid file must not abort the sweep"
-        assert [m for _, m in rules] == ["Logs", "Textures"], "order must be preserved"
-        assert rules[0][0].search("LOGS/x.txt"), "patterns must be case insensitive"
-        assert rules[1][0].search("a/b.dds"), "literal strings must not need escaping"
+        assert load_rules(good) == [("^logs/", "Logs"), ("\\.dds$", "Textures")], (
+            "patterns come back as written, in order"
+        )
 
         empty = base / "empty.toml"
         empty.write_text("")
@@ -173,20 +211,65 @@ def _check_load_rules() -> None:
         assert load_rules(not_a_list) is None, "'rule' must be an array of tables"
 
         bad_regex = base / "bad_regex.toml"
-        bad_regex.write_text(
-            "[[rule]]\n"
-            "pattern = '('\n"
-            'mod = "Broken"\n'
-            "\n"
-            "[[rule]]\n"
-            "pattern = 'ok'\n"
-            'mod = "Fine"\n'
+        bad_regex.write_text("[[rule]]\npattern = '('\nmod = \"Broken\"\n")
+        assert load_rules(bad_regex) == [("(", "Broken")], (
+            "an uncompilable pattern still loads, so the editor can show it"
         )
-        survivors = load_rules(bad_regex)
-        assert survivors is not None, "one bad pattern must not abort the file"
-        assert [m for _, m in survivors] == ["Fine"], "only the bad rule is dropped"
 
     print("load_rules self-check OK")
+
+
+def _check_compile_rules() -> None:
+    rules = compile_rules(
+        [("(", "Broken"), ("^logs/", "Logs"), ("\\.dds$", "Textures")]
+    )
+    assert [m for _, m in rules] == ["Logs", "Textures"], "only the bad rule is dropped"
+    assert rules[0][0].search("LOGS/x.txt"), "patterns must be case insensitive"
+    assert rules[1][0].search("a/b.dds"), "literal strings must not need escaping"
+
+    print("compile_rules self-check OK")
+
+
+def _check_save_rules() -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "rules.toml"
+
+        rows: list[Row] = [
+            ("\\.dds$", "Textures"),
+            ('say "hi"', "Quoted"),
+            ("caf\u00e9\\s+", "Unicode"),
+        ]
+        save_rules(path, rows)
+        assert load_rules(path) == rows, "every row survives a write/read round trip"
+        assert compile_rules(load_rules(path) or []), "saved patterns still compile"
+
+        save_rules(path, [])
+        assert load_rules(path) == [], "an empty table clears the file"
+
+    print("save_rules self-check OK")
+
+
+def _check_plan() -> None:
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        overwrite = Path(tmp)
+        for relative in ("logs/a.log", "logs/deep/b.log", "readme.txt"):
+            path = overwrite / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("x")
+        (overwrite / "hollow").mkdir()
+
+        rules = compile_rules([("^logs/", "Logs"), ("\\.log$", "Never")])
+        assert plan(overwrite, rules) == [
+            ("logs/a.log", "Logs"),
+            ("logs/deep/b.log", "Logs"),
+            ("readme.txt", None),
+        ], "every file is reported once, first rule wins, directories are ignored"
+
+    print("plan self-check OK")
 
 
 def _check_sweep() -> None:
@@ -215,8 +298,9 @@ def _check_sweep() -> None:
             "pattern = '^gone/'\n"
             'mod = "NotInstalled"\n'
         )
-        rules = load_rules(rules_file)
-        assert rules is not None
+        rows = load_rules(rules_file)
+        assert rows is not None
+        rules = compile_rules(rows)
 
         for relative, body in [
             ("logs/papyrus.0.log", "a"),
@@ -282,4 +366,7 @@ def _check_sweep() -> None:
 
 if __name__ == "__main__":
     _check_load_rules()
+    _check_compile_rules()
+    _check_save_rules()
+    _check_plan()
     _check_sweep()

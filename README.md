@@ -40,7 +40,7 @@ mklink /D "D:\Modding Skyrim\MO2\plugins\overwrite_regex" "C:\Users\bsoko\OneDri
 ```
 
 Verify: launch MO2 and look for **Overwrite Regex** in the Tools menu (the
-puzzle-piece icon). It opens a message box showing your overwrite folder path.
+puzzle-piece icon). It opens the rules editor.
 
 ## Configuration
 
@@ -50,7 +50,8 @@ Settings > Plugins > Overwrite Regex has one setting:
 | ------------ | ---------------------- | ---------------------------------------------------- |
 | `rules_file` | `overwrite_rules.toml` | Rules file path, relative to the MO2 base directory. An absolute path is used as-is. |
 
-Create that file next to `ModOrganizer.ini`:
+Tools > Overwrite Regex creates that file, empty, if it does not exist. It
+sits next to `ModOrganizer.ini`:
 
 ```toml
 # overwrite_rules.toml
@@ -69,9 +70,11 @@ Each `pattern` is a Python regex, matched with `re.search` and case
 insensitively, against the file's path relative to `overwrite`, using forward
 slashes: `logs/papyrus.0.log`. Anchor with `^` or `$` where it matters.
 
-Use TOML **literal strings** (single quotes) for patterns. They perform no
-escape processing, so `'\.dds$'` is the regex you typed. Double quotes would
-require `"\\.dds$"`.
+Editing by hand, use TOML **literal strings** (single quotes) for patterns.
+They perform no escape processing, so `'\.dds$'` is the regex you typed. Double
+quotes would require `"\\.dds$"`. The rules editor writes double-quoted strings
+and escapes them for you, and rewrites the whole file, so comments and hand
+formatting are lost the first time you save from it.
 
 `mod` is the mod's folder name under `MO2/mods/`.
 
@@ -88,8 +91,23 @@ file at that path, it is silently overwritten. Unmatched files stay put. A
 rule naming a mod that is not installed logs a warning to
 `MO2/logs/mo_interface.log` and leaves the file alone. Every empty directory
 left under `overwrite` afterward is deleted, including ones that were already
-empty before the sweep, even if no file moved. Tools > Overwrite Regex runs
-the same sweep on demand.
+empty before the sweep, even if no file moved.
+
+## The rules editor
+
+Tools > Overwrite Regex opens the rules in a table instead of sweeping. Add and
+remove rows, then close the window to write them back to the rules file.
+
+A pattern that will not compile, or an empty pattern or mod, turns its cell red
+and shows the reason as a tooltip. Such rows are still saved, so a half-finished
+rule survives a close, but they are left out of any sweep.
+
+**Dry Run** matches the rules currently in the table against the files now in
+`overwrite` and lists where each one would go, without moving anything. It
+checks matching only: a mod that is not installed still shows as a destination.
+
+**Run Sweep** performs the sweep with the rules currently in the table, saved or
+not.
 
 The file is re-read on every sweep, so edits apply without restarting MO2.
 
@@ -128,7 +146,9 @@ before MO2 silently refuses to load the plugin.
 ```
 overwrite_regex/       # the plugin package — this is what gets symlinked
 ├── __init__.py        # createPlugin(), MO2's required entry point
-└── plugin.py          # the IPluginTool implementation
+├── plugin.py          # the IPluginTool implementation and MO2 glue
+├── dialog.py          # the rules editor dialog
+└── sweep.py           # rules file I/O, matching, and moving; no mobase
 ```
 
 MO2 discovers a Python plugin by importing the package and calling

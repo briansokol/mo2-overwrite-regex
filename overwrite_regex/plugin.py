@@ -5,6 +5,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMessageBox
 
 from . import sweep
+from .dialog import RulesDialog
 
 
 class OverwriteRegex(mobase.IPluginTool):
@@ -48,26 +49,37 @@ class OverwriteRegex(mobase.IPluginTool):
         return QIcon()
 
     def display(self) -> None:
-        counts = self._sweep()
-        if counts is None:
+        path = self._rulesPath()
+        if not path.exists():
+            try:
+                sweep.save_rules(path, [])
+            except OSError as error:
+                QMessageBox.warning(
+                    self._parentWidget(),
+                    "Overwrite Regex",
+                    f"Cannot create {path}:\n{error}",
+                )
+                return
+
+        rows = sweep.load_rules(path)
+        if rows is None:
+            # Opening on an empty table would overwrite a file that is broken
+            # but still holds the user's rules.
             QMessageBox.warning(
                 self._parentWidget(),
                 "Overwrite Regex",
-                f"No rules were applied. See mo_interface.log for details.\n\n"
-                f"Rules file: {self._rulesPath()}",
+                f"{path} could not be read. See mo_interface.log for details.\n\n"
+                f"Fix or delete the file, then open this again.",
             )
             return
-        if counts.moved:
-            # Only on this path. MO2 refreshes on its own once an application
-            # exits, so _onFinishedRun would be asking for a second one.
-            self._organizer.refresh()
-        QMessageBox.information(
+
+        RulesDialog(
             self._parentWidget(),
-            "Overwrite Regex",
-            f"Moved {counts.moved} files.\n"
-            f"{counts.skipped} skipped (see mo_interface.log).\n"
-            f"{counts.unmatched} unmatched, left in overwrite.",
-        )
+            path,
+            rows,
+            Path(self._organizer.overwritePath()),
+            self._runSweep,
+        ).exec()
 
     def _rulesPath(self) -> Path:
         setting = self._organizer.pluginSetting(self.name(), "rules_file")
@@ -76,12 +88,25 @@ class OverwriteRegex(mobase.IPluginTool):
         return Path(self._organizer.basePath()) / str(setting)
 
     def _sweep(self) -> sweep.Counts | None:
-        rules = sweep.load_rules(self._rulesPath())
-        if rules is None:
+        rows = sweep.load_rules(self._rulesPath())
+        if rows is None:
             return None
         return sweep.sweep(
+            Path(self._organizer.overwritePath()),
+            sweep.compile_rules(rows),
+            self._resolveMod,
+        )
+
+    def _runSweep(self, rules: list[sweep.Rule]) -> sweep.Counts:
+        """Sweep on the dialog's behalf, with the rules it has on screen."""
+        counts = sweep.sweep(
             Path(self._organizer.overwritePath()), rules, self._resolveMod
         )
+        if counts.moved:
+            # Only on this path. MO2 refreshes on its own once an application
+            # exits, so _onFinishedRun would be asking for a second one.
+            self._organizer.refresh()
+        return counts
 
     def _resolveMod(self, name: str) -> Path | None:
         mod = self._organizer.modList().getMod(name)
