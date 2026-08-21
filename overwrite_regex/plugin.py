@@ -57,6 +57,10 @@ class OverwriteRegex(mobase.IPluginTool):
                 f"Rules file: {self._rulesPath()}",
             )
             return
+        if counts.moved:
+            # Only on this path. MO2 refreshes on its own once an application
+            # exits, so _onFinishedRun would be asking for a second one.
+            self._organizer.refresh()
         QMessageBox.information(
             self._parentWidget(),
             "Overwrite Regex",
